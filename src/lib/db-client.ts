@@ -28,10 +28,26 @@ const defaultAttendance: AttendanceLog[] = [
   { id: 'a8', member_id: '8', punch_time: '2026-06-11T09:10:40.000Z', device_name: 'eSSL X2008', is_expired_access: false, created_at: new Date().toISOString(), member_name: 'Deepa Nair', admission_no: '0008' },
 ];
 
+import { cookies } from 'next/headers';
+
 function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   return url.length > 0 && !url.includes('your-project') && !key.includes('your-anon-key');
+}
+
+async function getDatabaseMode(): Promise<'supabase' | 'local'> {
+  if (!isSupabaseConfigured()) {
+    return 'local';
+  }
+  try {
+    const cookieStore = await cookies();
+    const mode = cookieStore.get('db_mode')?.value;
+    if (mode === 'local') return 'local';
+  } catch (e) {
+    // cookies() throws when called outside request context (e.g., in background tasks or static generation)
+  }
+  return 'supabase';
 }
 
 function loadLocalDB() {
@@ -56,7 +72,7 @@ function saveLocalDB(data: any) {
 }
 
 export async function dbGetMembers(): Promise<Member[]> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { data, error } = await supabase
@@ -76,7 +92,7 @@ export async function dbGetMembers(): Promise<Member[]> {
 }
 
 export async function dbAddMember(member: Omit<Member, 'id' | 'created_at'>): Promise<Member> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { data, error } = await supabase
@@ -133,7 +149,7 @@ export async function dbAddMember(member: Omit<Member, 'id' | 'created_at'>): Pr
 }
 
 export async function dbUpdateMember(id: string, member: Partial<Member>): Promise<Member> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { data, error } = await supabase
@@ -183,7 +199,7 @@ export async function dbUpdateMember(id: string, member: Partial<Member>): Promi
 }
 
 export async function dbDeleteMember(id: string): Promise<boolean> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { error } = await supabase
@@ -228,7 +244,7 @@ export async function dbDeleteMember(id: string): Promise<boolean> {
 }
 
 export async function dbGetAttendance(dateFilter?: string): Promise<AttendanceLog[]> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       
@@ -294,7 +310,7 @@ export async function dbGetDevices(): Promise<any[]> {
     is_online: true,
   };
 
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { data, error } = await supabase.from('devices').select('*').order('created_at', { ascending: true });
@@ -324,7 +340,7 @@ export async function dbGetDevices(): Promise<any[]> {
 }
 
 export async function dbGetCommands(): Promise<any[]> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { data, error } = await supabase
@@ -355,7 +371,7 @@ export async function dbGetCommands(): Promise<any[]> {
 }
 
 export async function dbQueueCommand(deviceId: string, command: string, commandType: string, title: string): Promise<any> {
-  if (isSupabaseConfigured()) {
+  if (await getDatabaseMode() === 'supabase') {
     try {
       const supabase = createServerClient();
       const { data, error } = await supabase
@@ -399,3 +415,341 @@ export async function dbQueueCommand(deviceId: string, command: string, commandT
     title,
   };
 }
+
+export async function dbAddAttendanceLog(log: {
+  device_sn: string;
+  device_user_id: string;
+  punch_time: string;
+  is_expired_access: boolean;
+}): Promise<any> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      const { data, error } = await supabase
+        .from('attendance_logs')
+        .insert({
+          device_sn: log.device_sn,
+          device_user_id: log.device_user_id,
+          punch_time: log.punch_time,
+          is_expired_access: log.is_expired_access,
+        })
+        .select('*')
+        .single();
+      if (!error && data) {
+        return data;
+      }
+      console.error('[DATABASE] Supabase attendance log insert error:', error);
+    } catch (err) {
+      console.warn('[DATABASE] Supabase attendance log exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  const cleanPin = log.device_user_id.trim().replace(/^0+/, '');
+  const member = db.members.find((m: Member) => {
+    const mPin = m.device_user_id ? m.device_user_id.trim().replace(/^0+/, '') : '';
+    const mAdm = m.admission_no ? m.admission_no.trim().replace(/^0+/, '') : '';
+    return (mPin && mPin === cleanPin) || (mAdm && mAdm === cleanPin);
+  });
+
+  const newLog: AttendanceLog = {
+    id: 'a_' + Math.random().toString(36).substring(2, 11),
+    member_id: member ? member.id : '',
+    punch_time: log.punch_time,
+    device_name: `Device-${log.device_sn.slice(-6)}`,
+    is_expired_access: log.is_expired_access,
+    created_at: new Date().toISOString(),
+    member_name: member ? member.name : 'Unknown Biometric',
+    admission_no: member ? member.admission_no : cleanPin,
+  };
+
+  db.attendance = db.attendance || [];
+  db.attendance.push(newLog);
+  saveLocalDB(db);
+  return newLog;
+}
+
+export async function dbCheckDuplicateAttendance(device_user_id: string, punch_time: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      const { data, error } = await supabase
+        .from('attendance_logs')
+        .select('id')
+        .eq('device_user_id', device_user_id)
+        .eq('punch_time', punch_time)
+        .maybeSingle();
+      if (data) {
+        return true;
+      }
+    } catch (err) {
+      console.warn('[DATABASE] Supabase duplicate check exception:', err);
+    }
+  }
+
+  // Local DB check
+  const db = loadLocalDB();
+  const cleanPin = device_user_id.trim().replace(/^0+/, '');
+  return (db.attendance || []).some((log: AttendanceLog) => {
+    const logPin = log.admission_no ? log.admission_no.trim().replace(/^0+/, '') : '';
+    return logPin === cleanPin && log.punch_time === punch_time;
+  });
+}
+
+export async function dbUpsertDevice(serialNumber: string): Promise<any> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      const { data, error } = await supabase
+        .from('devices')
+        .upsert(
+          {
+            serial_number: serialNumber,
+            device_name: `Device-${serialNumber.slice(-6)}`,
+            last_ping: new Date().toISOString(),
+          },
+          { onConflict: 'serial_number' }
+        )
+        .select('*')
+        .single();
+      if (!error && data) {
+        return data;
+      }
+      console.error('[DATABASE] Supabase device upsert error:', error);
+    } catch (err) {
+      console.warn('[DATABASE] Supabase device upsert exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  db.devices = db.devices || [];
+  const existingIndex = db.devices.findIndex((d: any) => d.serial_number === serialNumber);
+  
+  const deviceData = {
+    id: existingIndex !== -1 ? db.devices[existingIndex].id : 'd_' + Math.random().toString(36).substring(2, 11),
+    device_name: `Device-${serialNumber.slice(-6)}`,
+    serial_number: serialNumber,
+    mac_address: existingIndex !== -1 ? db.devices[existingIndex].mac_address : '00:17:61:10:32:f6',
+    firmware_version: existingIndex !== -1 ? db.devices[existingIndex].firmware_version : 'ZAM70-NF24HA-Ver3.3.12',
+    last_ping: new Date().toISOString(),
+    is_online: true,
+  };
+
+  if (existingIndex !== -1) {
+    db.devices[existingIndex] = deviceData;
+  } else {
+    db.devices.push(deviceData);
+  }
+  saveLocalDB(db);
+  return deviceData;
+}
+
+export async function dbPingDevice(serialNumber: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      await supabase
+        .from('devices')
+        .update({ last_ping: new Date().toISOString() })
+        .eq('serial_number', serialNumber);
+      return;
+    } catch (err) {
+      console.warn('[DATABASE] Supabase device ping exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  db.devices = db.devices || [];
+  const dev = db.devices.find((d: any) => d.serial_number === serialNumber);
+  if (dev) {
+    dev.last_ping = new Date().toISOString();
+    saveLocalDB(db);
+  }
+}
+
+export async function dbSyncUserFromDevice(pin: string, name: string): Promise<Member> {
+  const cleanPin = pin.trim().replace(/^0+/, '');
+  const paddedPin = pin.trim().padStart(4, '0');
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      
+      // Look up existing member
+      const { data: members, error } = await supabase
+        .from('members')
+        .select('*');
+
+      if (!error && members) {
+        const existing = members.find(m => {
+          const mPin = m.device_user_id ? m.device_user_id.trim().replace(/^0+/, '') : '';
+          const mAdm = m.admission_no ? m.admission_no.trim().replace(/^0+/, '') : '';
+          return (mPin && mPin === cleanPin) || (mAdm && mAdm === cleanPin);
+        });
+
+        if (existing) {
+          // Update details (ensure device_user_id is mapped)
+          const { data: updated, error: updateErr } = await supabase
+            .from('members')
+            .update({
+              device_user_id: cleanPin,
+              name: name,
+            })
+            .eq('id', existing.id)
+            .select('*')
+            .single();
+          
+          if (!updateErr && updated) {
+            return updated as Member;
+          }
+        } else {
+          // Insert new member
+          const today = new Date();
+          const joinDate = today.toISOString().split('T')[0];
+          const nextDue = new Date();
+          nextDue.setMonth(nextDue.getMonth() + 1);
+          const nextDueDate = nextDue.toISOString().split('T')[0];
+
+          const { data: inserted, error: insertErr } = await supabase
+            .from('members')
+            .insert({
+              name: name,
+              admission_no: paddedPin,
+              device_user_id: cleanPin,
+              phone: '0000000000',
+              join_date: joinDate,
+              next_due_date: nextDueDate,
+              active: true,
+              notes: 'Registered on Biometric Device',
+            })
+            .select('*')
+            .single();
+
+          if (!insertErr && inserted) {
+            return inserted as Member;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[DATABASE] Supabase sync user exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  db.members = db.members || [];
+
+  const existingIndex = db.members.findIndex((m: Member) => {
+    const mPin = m.device_user_id ? m.device_user_id.trim().replace(/^0+/, '') : '';
+    const mAdm = m.admission_no ? m.admission_no.trim().replace(/^0+/, '') : '';
+    return (mPin && mPin === cleanPin) || (mAdm && mAdm === cleanPin);
+  });
+
+  if (existingIndex !== -1) {
+    const existing = db.members[existingIndex];
+    existing.device_user_id = cleanPin;
+    existing.name = name;
+    saveLocalDB(db);
+    return existing;
+  } else {
+    const today = new Date();
+    const joinDate = today.toISOString().split('T')[0];
+    const nextDue = new Date();
+    nextDue.setMonth(nextDue.getMonth() + 1);
+    const nextDueDate = nextDue.toISOString().split('T')[0];
+
+    const newMember: Member = {
+      id: Math.random().toString(36).substring(2, 11),
+      name: name,
+      admission_no: paddedPin,
+      device_user_id: cleanPin,
+      phone: '0000000000',
+      join_date: joinDate,
+      next_due_date: nextDueDate,
+      active: true,
+      notes: 'Registered on Biometric Device',
+      created_at: new Date().toISOString(),
+    };
+
+    db.members.push(newMember);
+    saveLocalDB(db);
+    return newMember;
+  }
+}
+
+export async function dbGetPendingCommands(): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      const { data, error } = await supabase
+        .from('device_commands')
+        .select('*')
+        .eq('executed', false)
+        .order('created_at', { ascending: true })
+        .limit(5);
+      
+      if (!error && data) {
+        return data;
+      }
+    } catch (err) {
+      console.warn('[DATABASE] Supabase get pending commands exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  db.commands = db.commands || [];
+  return db.commands.filter((c: any) => !c.executed).slice(0, 5);
+}
+
+export async function dbMarkCommandSent(commandId: number): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      await supabase
+        .from('device_commands')
+        .update({ executed: true })
+        .eq('id', commandId);
+      return;
+    } catch (err) {
+      console.warn('[DATABASE] Supabase mark command sent exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  db.commands = db.commands || [];
+  const cmd = db.commands.find((c: any) => c.id === commandId);
+  if (cmd) {
+    cmd.executed = true;
+    saveLocalDB(db);
+  }
+}
+
+export async function dbUpdateCommandStatus(commandId: number, isSuccess: boolean): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createServerClient();
+      await supabase
+        .from('device_commands')
+        .update({ executed: isSuccess })
+        .eq('id', commandId);
+      return;
+    } catch (err) {
+      console.warn('[DATABASE] Supabase update command status exception:', err);
+    }
+  }
+
+  // Fallback to local DB
+  const db = loadLocalDB();
+  db.commands = db.commands || [];
+  const cmd = db.commands.find((c: any) => c.id === commandId);
+  if (cmd) {
+    cmd.executed = isSuccess;
+    saveLocalDB(db);
+  }
+}
+

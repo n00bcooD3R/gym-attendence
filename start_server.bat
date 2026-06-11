@@ -9,6 +9,8 @@ ipconfig | findstr /i "IPv4"
 echo.
 echo [2/2] Launching Gym Attendance Web App...
 cd /d "c:\Users\aroma\Desktop\ssl\gym-attendance"
+:: Open browser in background after 3 seconds
+start /b cmd /c "timeout /t 3 >nul && start http://localhost:3000"
 npm run dev
 echo.
 echo If server shut down unexpectedly, press any key to restart.

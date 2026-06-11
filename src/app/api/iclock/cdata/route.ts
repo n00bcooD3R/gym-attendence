@@ -4,8 +4,15 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parseAttendanceLogs, parseOperationLogs, buildRegistryOptions } from '@/lib/adms-parser';
-import { createServerClient } from '@/lib/supabase';
+import { parseAttendanceLogs, parseOperationLogs, parseUserInfo, buildRegistryOptions } from '@/lib/adms-parser';
+import { 
+  dbGetMembers, 
+  dbAddAttendanceLog, 
+  dbCheckDuplicateAttendance, 
+  dbUpsertDevice, 
+  dbPingDevice, 
+  dbSyncUserFromDevice 
+} from '@/lib/db-client';
 
 /**
  * GET /api/iclock/cdata?SN=xxx
@@ -17,21 +24,10 @@ export async function GET(request: NextRequest) {
 
   console.log(`[ADMS] cdata GET handshake from device: ${serialNumber}`);
 
-  const supabase = createServerClient();
-
   // Upsert device record
   if (serialNumber) {
     try {
-      await supabase.from('devices').upsert(
-        {
-          serial_number: serialNumber,
-          device_name: `Device-${serialNumber.slice(-6)}`,
-          last_ping: new Date().toISOString(),
-          transaction_stamp: '0',
-          op_stamp: '0',
-        },
-        { onConflict: 'serial_number' }
-      );
+      await dbUpsertDevice(serialNumber);
     } catch (err) {
       console.error('[ADMS] Failed to upsert device:', err);
     }
@@ -48,7 +44,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/iclock/cdata?SN=xxx&table=ATTLOG&Stamp=xxx
- * Receives attendance data from device
+ * Receives attendance data and user enrollments from device
  */
 export async function POST(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -59,15 +55,10 @@ export async function POST(request: NextRequest) {
   const body = await request.text();
   console.log(`[ADMS] cdata POST from SN ${serialNumber}, table=${table}, stamp=${stamp}`);
 
-  const supabase = createServerClient();
-
   // Update device ping timestamp
   if (serialNumber) {
     try {
-      await supabase
-        .from('devices')
-        .update({ last_ping: new Date().toISOString() })
-        .eq('serial_number', serialNumber);
+      await dbPingDevice(serialNumber);
     } catch (err) {
       console.error('[ADMS] Device ping update failed:', err);
     }
@@ -87,16 +78,9 @@ export async function POST(request: NextRequest) {
           // Strip leading zeros to prevent mismatch between "001" and "1"
           const cleanPin = record.pin.trim().replace(/^0+/, '');
 
-          // 1. Look up the member by admission_no or device_user_id to evaluate validity
-          const { data: members, error: memberErr } = await supabase
-            .from('members')
-            .select('id, name, next_due_date, active, device_user_id, admission_no');
-
-          if (memberErr || !members) {
-            console.error(`[ADMS] Error fetching members list:`, memberErr);
-            continue;
-          }
-
+          // 1. Look up the member to evaluate validity
+          const members = await dbGetMembers();
+          
           // Map match using zero-stripped strings
           const member = members.find(m => {
             const mPin = m.device_user_id ? m.device_user_id.trim().replace(/^0+/, '') : '';
@@ -106,11 +90,12 @@ export async function POST(request: NextRequest) {
 
           let isExpiredAccess = false;
           if (member) {
-            // Validate membership expiry (next_due_date acts as expiration date)
+            // Validate membership expiry (staff members have infinite membership)
+            const isStaff = !!member.is_staff;
             const todayStr = new Date().toISOString().split('T')[0];
             const expiryStr = member.next_due_date || '1970-01-01';
             
-            const isExpired = expiryStr < todayStr;
+            const isExpired = !isStaff && (expiryStr < todayStr);
             const isInactive = !member.active;
             isExpiredAccess = isExpired || isInactive;
 
@@ -122,29 +107,17 @@ export async function POST(request: NextRequest) {
           }
 
           // 2. Prevent duplicate punches (same user at the exact same punch_time)
-          const { data: existing } = await supabase
-            .from('attendance_logs')
-            .select('id')
-            .eq('device_user_id', cleanPin)
-            .eq('punch_time', punchTime)
-            .maybeSingle();
+          const isDuplicate = await dbCheckDuplicateAttendance(cleanPin, punchTime);
 
-          if (!existing) {
-            // 3. Insert punch record into the actual attendance_logs table
-            const { error: insertErr } = await supabase
-              .from('attendance_logs')
-              .insert({
-                device_sn: serialNumber,
-                device_user_id: cleanPin,
-                punch_time: punchTime,
-                is_expired_access: isExpiredAccess,
-              });
-
-            if (insertErr) {
-              console.error(`[ADMS] Failed to save attendance:`, insertErr);
-            } else {
-              console.log(`[ADMS] ✅ Synced punch: PIN #${cleanPin} at ${punchTime} (Expired Access: ${isExpiredAccess})`);
-            }
+          if (!isDuplicate) {
+            // 3. Insert punch record
+            await dbAddAttendanceLog({
+              device_sn: serialNumber,
+              device_user_id: cleanPin,
+              punch_time: punchTime,
+              is_expired_access: isExpiredAccess,
+            });
+            console.log(`[ADMS] ✅ Synced punch: PIN #${cleanPin} at ${punchTime} (Expired Access: ${isExpiredAccess})`);
           } else {
             console.log(`[ADMS] ⏭️ Ignored duplicate punch: PIN #${cleanPin} at ${punchTime}`);
           }
@@ -153,20 +126,34 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-  } else if (table === 'OPERLOG' && body.trim()) {
-    // Parse and store operation logs
+  } 
+  // Handle user data sync from device (whenever user registers on the machine)
+  else if ((table.toUpperCase() === 'USERINFO' || table.toUpperCase() === 'USER') && body.trim()) {
+    try {
+      const records = parseUserInfo(body);
+      console.log(`[ADMS] Parsed ${records.length} user info records from device`);
+
+      for (const record of records) {
+        const pin = record.PIN || record.pin || '';
+        const name = record.Name || record.name || `Device User ${pin}`;
+
+        if (pin) {
+          console.log(`[ADMS] Syncing device registered user. PIN: ${pin}, Name: ${name}`);
+          const syncedMember = await dbSyncUserFromDevice(pin, name);
+          console.log(`[ADMS] Successfully synced user to DB: ${syncedMember.name} (ID: ${syncedMember.admission_no})`);
+        }
+      }
+    } catch (err) {
+      console.error('[ADMS] User info sync from device failed:', err);
+    }
+  }
+  else if (table === 'OPERLOG' && body.trim()) {
+    // Parse operation logs
     try {
       const records = parseOperationLogs(body);
       console.log(`[ADMS] Parsed ${records.length} operation records`);
-
-      for (const record of records) {
-        await supabase.from('device_op_logs').insert({
-          op_code: record.opCode,
-          op_date: record.opTime,
-        });
-      }
     } catch (err) {
-      console.error('[ADMS] Operation log sync failed:', err);
+      console.error('[ADMS] Operation log parse failed:', err);
     }
   }
 

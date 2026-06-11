@@ -26,6 +26,7 @@ export interface Member {
   id: string;
   name: string;
   admission_no: string; // The PIN/Code registered on the biometric device
+  device_user_id?: string; // Optional custom biometric device PIN
   phone: string;
   photo_url?: string;
   address?: string;
@@ -40,6 +41,7 @@ export interface Member {
   next_due_date: string; // Expiration date
   last_payment_date?: string;
   is_pt_client?: boolean;
+  is_staff?: boolean; // Gym staff flag for bypassing expiration checks
   active: boolean;
   department?: string;
   notes?: string;

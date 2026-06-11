@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
+import { dbUpdateCommandStatus } from '@/lib/db-client';
 
 /**
  * POST /api/iclock/devicecmd?SN=xxx
@@ -19,8 +19,6 @@ export async function POST(request: NextRequest) {
   console.log(body.substring(0, 500));
 
   if (serialNumber && body.trim()) {
-    const supabase = createServerClient();
-    
     // Parse command results - format: "ID:Return:CMD_VALUE"
     const lines = body.split('\n').filter(l => l.trim());
     for (const line of lines) {
@@ -32,10 +30,7 @@ export async function POST(request: NextRequest) {
         
         try {
           // Update executed flag in device_commands
-          await supabase
-            .from('device_commands')
-            .update({ executed: isSuccess })
-            .eq('id', parseInt(commandId));
+          await dbUpdateCommandStatus(parseInt(commandId), isSuccess);
         } catch (err) {
           console.error(`[ADMS] Failed to update command status for ID ${commandId}:`, err);
         }

@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
       { source: '/iclock/ping.php', destination: '/api/iclock/ping' },
       { source: '/iclock/getrequest.php', destination: '/api/iclock/getrequest' },
       { source: '/iclock/devicecmd.php', destination: '/api/iclock/devicecmd' },
+      // ASPX compatibility (some ZKTeco/eSSL firmware versions use .aspx extension)
+      { source: '/iclock/cdata.aspx', destination: '/api/iclock/cdata' },
+      { source: '/iclock/ping.aspx', destination: '/api/iclock/ping' },
+      { source: '/iclock/getrequest.aspx', destination: '/api/iclock/getrequest' },
+      { source: '/iclock/devicecmd.aspx', destination: '/api/iclock/devicecmd' },
     ];
   },
 };

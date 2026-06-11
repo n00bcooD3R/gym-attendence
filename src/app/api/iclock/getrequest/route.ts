@@ -4,8 +4,8 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
 import { formatDeviceCommand } from '@/lib/adms-parser';
+import { dbUpsertDevice, dbGetPendingCommands, dbMarkCommandSent } from '@/lib/db-client';
 
 /**
  * GET /api/iclock/getrequest?SN=xxx
@@ -24,32 +24,19 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const supabase = createServerClient();
-
-  // Track device heartbeat ping
+  // Register / track device heartbeat ping
   try {
-    await supabase
-      .from('devices')
-      .update({ last_ping: new Date().toISOString() })
-      .eq('serial_number', serialNumber);
+    await dbUpsertDevice(serialNumber);
   } catch (err) {
-    console.error('[ADMS] Heartbeat track failed:', err);
+    console.error('[ADMS] Heartbeat register failed:', err);
   }
 
-  // Check for pending commands using your actual column 'executed'
-  const { data: commands, error } = await supabase
-    .from('device_commands')
-    .select('*')
-    .eq('executed', false)
-    .order('created_at', { ascending: true })
-    .limit(5);
-
-  if (error) {
-    console.error('[ADMS] Error reading command queue:', error);
-    return new NextResponse('OK', {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' },
-    });
+  // Check for pending commands
+  let commands: any[] = [];
+  try {
+    commands = await dbGetPendingCommands();
+  } catch (err) {
+    console.error('[ADMS] Error reading command queue:', err);
   }
 
   if (!commands || commands.length === 0) {
@@ -59,16 +46,17 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Format commands and mark as sent/executed
+  // Format commands and mark as sent
   const commandLines: string[] = [];
   for (const cmd of commands) {
-    commandLines.push(formatDeviceCommand(cmd.id, cmd.command));
+    commandLines.push(formatDeviceCommand(cmd.id.toString(), cmd.command));
     
-    // Mark command as executed so it is not double-sent
-    await supabase
-      .from('device_commands')
-      .update({ executed: true })
-      .eq('id', cmd.id);
+    try {
+      // Mark command as sent so it is not double-sent
+      await dbMarkCommandSent(parseInt(cmd.id));
+    } catch (err) {
+      console.error(`[ADMS] Failed to mark command ${cmd.id} as sent:`, err);
+    }
   }
 
   console.log(`[ADMS] Pushed ${commandLines.length} commands to SN ${serialNumber}`);

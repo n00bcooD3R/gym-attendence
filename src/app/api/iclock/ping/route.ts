@@ -4,11 +4,11 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
+import { dbUpsertDevice } from '@/lib/db-client';
 
 /**
  * GET /api/iclock/ping?SN=xxx
- * Device heartbeat — updates last_ping timestamp
+ * Device heartbeat — updates last_ping timestamp (and registers device if new)
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -17,11 +17,11 @@ export async function GET(request: NextRequest) {
   console.log(`[ADMS] Ping from device: ${serialNumber}`);
 
   if (serialNumber) {
-    const supabase = createServerClient();
-    await supabase
-      .from('devices')
-      .update({ last_ping: new Date().toISOString() })
-      .eq('serial_number', serialNumber);
+    try {
+      await dbUpsertDevice(serialNumber);
+    } catch (err) {
+      console.error('[ADMS] Ping registration update failed:', err);
+    }
   }
 
   return new NextResponse('OK', {
