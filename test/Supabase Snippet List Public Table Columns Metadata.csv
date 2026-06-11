@@ -1,0 +1,94 @@
+table_name,column_name,data_type,is_nullable,column_default
+attendance_logs,id,bigint,NO,null
+attendance_logs,device_sn,text,YES,null
+attendance_logs,device_user_id,text,YES,null
+attendance_logs,punch_time,timestamp with time zone,YES,null
+attendance_logs,created_at,timestamp with time zone,YES,now()
+client_tokens,id,uuid,NO,gen_random_uuid()
+client_tokens,member_id,uuid,YES,null
+client_tokens,token,text,NO,"encode(gen_random_bytes(24), 'hex'::text)"
+client_tokens,created_at,timestamp with time zone,YES,now()
+client_tokens,username,text,YES,null
+client_tokens,password_hash,text,YES,null
+device_commands,id,bigint,NO,null
+device_commands,command,text,NO,null
+device_commands,executed,boolean,YES,false
+device_commands,created_at,timestamp with time zone,YES,now()
+diet_plans,id,uuid,NO,gen_random_uuid()
+diet_plans,member_id,uuid,YES,null
+diet_plans,meal_label,text,NO,null
+diet_plans,items,jsonb,YES,'[]'::jsonb
+diet_plans,meal_order,integer,YES,0
+diet_plans,notes,text,YES,null
+diet_plans,updated_at,timestamp with time zone,YES,now()
+diet_plans,created_at,timestamp with time zone,YES,now()
+diets,id,uuid,NO,gen_random_uuid()
+diets,member_id,uuid,YES,null
+diets,meal_label,text,YES,null
+diets,items,jsonb,YES,null
+diets,notes,text,YES,null
+diets,created_at,timestamp with time zone,YES,now()
+food_diary,id,uuid,NO,gen_random_uuid()
+food_diary,member_id,uuid,YES,null
+food_diary,diary_date,date,NO,CURRENT_DATE
+food_diary,entries,jsonb,YES,'[]'::jsonb
+food_diary,mood,text,YES,null
+food_diary,water_ml,integer,YES,0
+food_diary,notes,text,YES,null
+food_diary,created_at,timestamp with time zone,YES,now()
+food_diary,updated_at,timestamp with time zone,YES,now()
+members,id,uuid,NO,gen_random_uuid()
+members,admission_no,text,NO,null
+members,name,text,NO,null
+members,photo_url,text,YES,null
+members,address,text,YES,null
+members,phone,text,NO,null
+members,age,integer,YES,null
+members,gender,text,YES,null
+members,weight,numeric,YES,null
+members,height,numeric,YES,null
+members,join_date,date,YES,CURRENT_DATE
+members,fee_amount,numeric,YES,0
+members,fee_cycle_days,integer,YES,30
+members,next_due_date,date,YES,null
+members,last_payment_date,date,YES,null
+members,is_pt_client,boolean,YES,false
+members,active,boolean,YES,true
+members,notes,text,YES,null
+members,created_at,timestamp with time zone,YES,now()
+members,dob,date,YES,null
+members,couple_partner_id,uuid,YES,null
+members,is_couple_main,boolean,YES,false
+members,is_staff,boolean,YES,false
+members,device_user_id,text,YES,null
+payments,id,uuid,NO,gen_random_uuid()
+payments,member_id,uuid,YES,null
+payments,amount,numeric,NO,null
+payments,paid_on,date,YES,CURRENT_DATE
+payments,method,text,YES,'cash'::text
+payments,notes,text,YES,null
+payments,created_at,timestamp with time zone,YES,now()
+settings,id,uuid,NO,gen_random_uuid()
+settings,key,text,NO,null
+settings,value,text,YES,null
+settings,updated_at,timestamp with time zone,YES,now()
+wa_messages,id,uuid,NO,gen_random_uuid()
+wa_messages,member_id,uuid,YES,null
+wa_messages,phone,text,NO,null
+wa_messages,body,text,NO,null
+wa_messages,status,text,YES,'sent'::text
+wa_messages,error,text,YES,null
+wa_messages,sent_at,timestamp with time zone,YES,now()
+workout_plans,id,uuid,NO,gen_random_uuid()
+workout_plans,member_id,uuid,YES,null
+workout_plans,day_number,integer,NO,null
+workout_plans,day_label,text,NO,null
+workout_plans,exercises,jsonb,YES,'[]'::jsonb
+workout_plans,notes,text,YES,null
+workout_plans,updated_at,timestamp with time zone,YES,now()
+workout_plans,created_at,timestamp with time zone,YES,now()
+workouts,id,uuid,NO,gen_random_uuid()
+workouts,member_id,uuid,YES,null
+workouts,day_label,text,YES,null
+workouts,exercises,jsonb,YES,null
+workouts,created_at,timestamp with time zone,YES,now()
