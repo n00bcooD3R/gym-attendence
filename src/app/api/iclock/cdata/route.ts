@@ -69,6 +69,14 @@ export async function POST(request: NextRequest) {
     const records = parseAttendanceLogs(body);
     console.log(`[ADMS] Parsed ${records.length} raw attendance records`);
 
+    // 1. Look up the members once to evaluate validity
+    let members: any[] = [];
+    try {
+      members = await dbGetMembers();
+    } catch (err) {
+      console.error('[ADMS] Failed to fetch members for validation:', err);
+    }
+
     for (const record of records) {
       if (record.pin && record.time) {
         try {
@@ -77,9 +85,6 @@ export async function POST(request: NextRequest) {
           
           // Strip leading zeros to prevent mismatch between "001" and "1"
           const cleanPin = record.pin.trim().replace(/^0+/, '');
-
-          // 1. Look up the member to evaluate validity
-          const members = await dbGetMembers();
           
           // Map match using zero-stripped strings
           const member = members.find(m => {

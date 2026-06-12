@@ -571,17 +571,18 @@ export async function dbPingDevice(serialNumber: string): Promise<void> {
 }
 
 export async function dbSyncUserFromDevice(pin: string, name: string): Promise<Member> {
-  const cleanPin = pin.trim().replace(/^0+/, '');
-  const paddedPin = pin.trim().padStart(4, '0');
+  const cleanPin = pin.trim().replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '');
+  const paddedPin = cleanPin.padStart(4, '0');
 
   if (isSupabaseConfigured()) {
     try {
       const supabase = createServerClient();
       
-      // Look up existing member
+      // Look up existing member by filtering matching pins/admission numbers
       const { data: members, error } = await supabase
         .from('members')
-        .select('*');
+        .select('*')
+        .or(`device_user_id.eq.${cleanPin},admission_no.eq.${paddedPin},admission_no.eq.${cleanPin},device_user_id.eq.${paddedPin}`);
 
       if (!error && members) {
         const existing = members.find(m => {

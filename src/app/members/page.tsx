@@ -36,6 +36,7 @@ export default function MembersPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form states
   const [formName, setFormName] = useState('');
@@ -79,6 +80,7 @@ export default function MembersPage() {
     setFormDepartment('Fitness');
     setFormActive(true);
     setFormNotes('');
+    setIsSaving(false);
     setShowModal(true);
   };
 
@@ -101,6 +103,7 @@ export default function MembersPage() {
       return;
     }
 
+    setIsSaving(true);
     try {
       const payload = {
         name: formName,
@@ -120,7 +123,7 @@ export default function MembersPage() {
           body: JSON.stringify({ id: editingMember.id, ...payload }),
         });
         if (res.ok) {
-          fetchMembers();
+          await fetchMembers();
           setShowModal(false);
         } else {
           const data = await res.json();
@@ -134,7 +137,7 @@ export default function MembersPage() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
-          fetchMembers();
+          await fetchMembers();
           setShowModal(false);
         } else {
           const data = await res.json();
@@ -143,6 +146,8 @@ export default function MembersPage() {
       }
     } catch (err) {
       console.error('Error saving member:', err);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -355,6 +360,7 @@ export default function MembersPage() {
                       value={formName}
                       onChange={(e) => setFormName(e.target.value)}
                       required
+                      disabled={isSaving}
                     />
                   </div>
                   <div className="form-group">
@@ -365,7 +371,7 @@ export default function MembersPage() {
                       value={formCode}
                       onChange={(e) => setFormCode(e.target.value)}
                       required
-                      disabled={!!editingMember} // ID shouldn't be edited once linked on device
+                      disabled={!!editingMember || isSaving} // ID shouldn't be edited once linked on device
                     />
                   </div>
                   <div className="form-group">
@@ -376,6 +382,7 @@ export default function MembersPage() {
                       value={formPhone}
                       onChange={(e) => setFormPhone(e.target.value)}
                       required
+                      disabled={isSaving}
                     />
                   </div>
                   <div className="form-group">
@@ -386,6 +393,7 @@ export default function MembersPage() {
                       value={formExpiry}
                       onChange={(e) => setFormExpiry(e.target.value)}
                       required
+                      disabled={isSaving}
                     />
                   </div>
                   <div className="form-group">
@@ -394,6 +402,7 @@ export default function MembersPage() {
                       className="form-select"
                       value={formDepartment}
                       onChange={(e) => setFormDepartment(e.target.value)}
+                      disabled={isSaving}
                     >
                       <option value="Fitness">Fitness</option>
                       <option value="Yoga">Yoga</option>
@@ -411,6 +420,7 @@ export default function MembersPage() {
                           checked={formActive}
                           onChange={(e) => setFormActive(e.target.checked)}
                           style={{ accentColor: 'var(--accent-cyan)' }}
+                          disabled={isSaving}
                         />
                         Active Access
                       </label>
@@ -424,13 +434,21 @@ export default function MembersPage() {
                     placeholder="Optional details or email address"
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.target.value)}
+                    disabled={isSaving}
                   />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">
-                  {editingMember ? 'Save Changes' : 'Enroll Member'}
+                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={isSaving}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader className="animate-spin" size={16} style={{ marginRight: 6, display: 'inline-block', verticalAlign: 'middle' }} />
+                      {editingMember ? 'Saving...' : 'Enrolling...'}
+                    </>
+                  ) : (
+                    editingMember ? 'Save Changes' : 'Enroll Member'
+                  )}
                 </button>
               </div>
             </form>
