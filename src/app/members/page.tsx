@@ -351,7 +351,7 @@ export default function MembersPage() {
                 </button>
               </div>
               <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="modal-form-grid">
                   <div className="form-group">
                     <label className="form-label">Full Name *</label>
                     <input
@@ -426,7 +426,7 @@ export default function MembersPage() {
                       </label>
                     </div>
                   </div>
-                </div>
+              </div>
                 <div className="form-group">
                   <label className="form-label">Notes / Email</label>
                   <input

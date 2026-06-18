@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Bell, Database } from 'lucide-react';
+import { Search, Bell, Database, Menu } from 'lucide-react';
+import { useNav } from './NavContext';
 
 interface HeaderProps {
   title: string;
@@ -11,14 +12,13 @@ interface HeaderProps {
 export default function Header({ title, subtitle }: HeaderProps) {
   const [supabaseConfigured, setSupabaseConfigured] = useState(false);
   const [dbMode, setDbMode] = useState<'supabase' | 'local'>('supabase');
+  const { openSidebar } = useNav();
 
   useEffect(() => {
-    // Check if Supabase environment variables are configured
     const hasUrl = process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project');
     const hasKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.includes('your-anon-key');
     setSupabaseConfigured(!!(hasUrl && hasKey));
 
-    // Get current mode from cookie
     const match = document.cookie.match(/(^|;)\s*db_mode\s*=\s*([^;]+)/);
     if (match && match[2] === 'local') {
       setDbMode('local');
@@ -35,81 +35,92 @@ export default function Header({ title, subtitle }: HeaderProps) {
     window.location.reload();
   };
 
+  const isLive = dbMode === 'supabase' && supabaseConfigured;
+
   return (
     <header className="header">
-      <div>
-        <h1 className="header-title">{title}</h1>
-        {subtitle && (
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
-            {subtitle}
-          </p>
-        )}
+      <div className="header-left">
+        {/* Hamburger menu — visible only on mobile */}
+        <button
+          className="header-menu-btn"
+          onClick={openSidebar}
+          aria-label="Open navigation menu"
+        >
+          <Menu size={22} />
+        </button>
+
+        <div>
+          <h1 className="header-title">{title}</h1>
+          {subtitle && (
+            <p className="header-subtitle">{subtitle}</p>
+          )}
+        </div>
       </div>
+
       <div className="header-actions">
-        {/* Database Toggle Indicator */}
+        {/* DB badge */}
         <button
           onClick={toggleDbMode}
-          className="btn-icon"
+          className="btn-icon header-db-badge"
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            padding: '6px 14px',
+            gap: '6px',
+            padding: '5px 12px',
             borderRadius: '20px',
             fontSize: '12px',
             fontWeight: 600,
             cursor: supabaseConfigured ? 'pointer' : 'not-allowed',
-            background: dbMode === 'supabase' && supabaseConfigured
-              ? 'rgba(16, 185, 129, 0.1)'
-              : 'rgba(245, 158, 11, 0.1)',
-            borderColor: dbMode === 'supabase' && supabaseConfigured
-              ? 'rgba(16, 185, 129, 0.3)'
-              : 'rgba(245, 158, 11, 0.3)',
-            color: dbMode === 'supabase' && supabaseConfigured
-              ? 'var(--accent-green)'
-              : 'var(--accent-amber)',
+            background: isLive ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+            borderColor: isLive ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)',
+            color: isLive ? 'var(--accent-green)' : 'var(--accent-amber)',
             transition: 'all 0.2s ease',
+            whiteSpace: 'nowrap',
           }}
           title={
             supabaseConfigured
-              ? `Database: ${dbMode === 'supabase' ? 'Supabase (Live)' : 'Local File (Offline)'}. Click to switch database.`
-              : 'Supabase credentials not configured in .env.local. Falling back to Local JSON database.'
+              ? `Database: ${dbMode === 'supabase' ? 'Supabase (Live)' : 'Local File (Offline)'}. Click to switch.`
+              : 'Supabase credentials not configured in .env.local.'
           }
         >
           <Database size={13} />
-          <span>
-            {!supabaseConfigured 
-              ? 'DB: Local (No Config)' 
-              : dbMode === 'supabase' 
-                ? 'DB: Supabase (Live)' 
-                : 'DB: Local (Offline)'}
+          <span className="db-badge-label">
+            {!supabaseConfigured
+              ? 'Local (No Config)'
+              : dbMode === 'supabase'
+                ? 'Supabase'
+                : 'Local (Offline)'}
           </span>
-          <span 
+          <span
             style={{
               width: '6px',
               height: '6px',
               borderRadius: '50%',
-              background: !supabaseConfigured 
-                ? 'var(--accent-amber)' 
-                : dbMode === 'supabase' 
-                  ? 'var(--accent-green)' 
+              background: !supabaseConfigured
+                ? 'var(--accent-amber)'
+                : isLive
+                  ? 'var(--accent-green)'
                   : 'var(--accent-amber)',
-              boxShadow: !supabaseConfigured 
-                ? '0 0 6px var(--accent-amber-glow)' 
-                : dbMode === 'supabase' 
-                  ? '0 0 6px var(--accent-green-glow)' 
+              boxShadow: !supabaseConfigured
+                ? '0 0 6px var(--accent-amber-glow)'
+                : isLive
+                  ? '0 0 6px var(--accent-green-glow)'
                   : '0 0 6px var(--accent-amber-glow)',
+              flexShrink: 0,
             }}
           />
         </button>
 
+        {/* Search — hidden on small mobile */}
         <div className="header-search">
           <Search size={16} />
           <input type="text" placeholder="Search members..." />
         </div>
+
         <button className="btn-icon" title="Notifications">
           <Bell size={18} />
         </button>
+
         <div
           style={{
             width: 36,
@@ -122,6 +133,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
             fontSize: 14,
             fontWeight: 700,
             cursor: 'pointer',
+            flexShrink: 0,
           }}
         >
           A
