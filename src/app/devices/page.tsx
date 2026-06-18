@@ -10,14 +10,14 @@ import {
   Wifi,
   WifiOff,
   Fingerprint,
-  ScanFace,
   Settings,
   Terminal,
   CheckCircle,
   XCircle,
   Loader,
-  Plus,
   X,
+  Users,
+  AlertCircle,
 } from 'lucide-react';
 import { Device, DeviceCommand } from '@/lib/types';
 
@@ -41,7 +41,9 @@ export default function DevicesPage() {
   const [loading, setLoading] = useState(true);
   const [showCmdModal, setShowCmdModal] = useState(false);
   const [customCmd, setCustomCmd] = useState('');
-  
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ queued: number; total: number } | null>(null);
+
   const [modalCmdType, setModalCmdType] = useState('CHECK');
   const [modalNotes, setModalNotes] = useState('');
 
@@ -95,6 +97,27 @@ export default function DevicesPage() {
     }
   };
 
+  const handleBulkSync = async () => {
+    if (!confirm(`This will queue DATA UPDATE USERINFO commands for ALL members in the database and push them to the device. Continue?`)) return;
+    setIsSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch('/api/devices/sync-all', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncResult({ queued: data.queued, total: data.total });
+        fetchDevicesAndCommands();
+      } else {
+        alert('Bulk sync failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Bulk sync error:', err);
+      alert('Network error during bulk sync.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     let label = 'Check Device';
@@ -129,9 +152,71 @@ export default function DevicesPage() {
             <Cpu size={24} style={{ display: 'inline', marginRight: 10, verticalAlign: 'middle' }} />
             Device Management
           </h2>
-          <button className="btn btn-primary" onClick={() => setShowCmdModal(true)}>
-            <Send size={16} /> Send Command
-          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={handleBulkSync}
+              disabled={isSyncing || !activeDevice}
+              title="Queue DATA UPDATE USERINFO for all members and push to device"
+            >
+              {isSyncing ? (
+                <><Loader size={16} className="animate-spin" /> Syncing...</>
+              ) : (
+                <><Users size={16} /> Sync All Members to Device</>
+              )}
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowCmdModal(true)}>
+              <Send size={16} /> Send Command
+            </button>
+          </div>
+        </div>
+
+        {/* Sync result banner */}
+        {syncResult && (
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: 'var(--radius)',
+            padding: '12px 18px',
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            color: 'var(--accent-green)',
+          }}>
+            <CheckCircle size={18} />
+            <div>
+              <strong>Bulk sync queued!</strong> {syncResult.queued} of {syncResult.total} member commands queued.
+              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 13 }}>
+                Device will receive them on next heartbeat poll (within ~30 seconds).
+              </span>
+            </div>
+            <button
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+              onClick={() => setSyncResult(null)}
+            ><X size={16} /></button>
+          </div>
+        )}
+
+        {/* Important notice about biometrics */}
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          borderRadius: 'var(--radius)',
+          padding: '12px 18px',
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          fontSize: 13,
+        }}>
+          <AlertCircle size={18} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: 1 }} />
+          <div style={{ color: 'var(--text-secondary)' }}>
+            <strong style={{ color: 'var(--accent-amber)' }}>Why are users missing on device?</strong>
+            {' '}The <em>"Sync All Members"</em> button pushes user records (name, PIN, expiry) to the device.
+            However, <strong>biometric templates (fingerprint/face)</strong> cannot be sent remotely — members
+            must re-enroll their fingerprint/face physically on the device after being re-added.
+          </div>
         </div>
 
         {/* Device Details Card */}
